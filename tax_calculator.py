@@ -1,6 +1,7 @@
 from typing import Dict, List
 import math
 import pandas as pd
+import os
 
 MIN_BASE = 2690
 MAX_BASE = 36921
@@ -178,44 +179,71 @@ def yearly_salary_details(gross_monthly: List[float], round_int: bool = False):
 
     return {"monthly": monthly_details, "totals": totals}
 
-def _print_or_save_details(res: dict, csv_path=None):
-    df = pd.DataFrame(res["monthly"])
-    if csv_path:
-        df.to_csv(csv_path, index=False, encoding="utf-8-sig")
-        print(f"CSV saved → {csv_path}")
-    else:
-        # 在终端打印紧凑表；在 Jupyter 会自动渲染为表格
-        print(df.to_string(index=False))
-    print("\nAnnual Totals:")
-    print(pd.Series(res["totals"]))
-
 if __name__ == '__main__':
     import argparse, json
-    p = argparse.ArgumentParser()
-    g = p.add_mutually_exclusive_group(required=False)
-    g.add_argument('--monthly', type=float)
-    g.add_argument('--annual', type=float)
-    p.add_argument('--round-int', action='store_true', help='Round all numeric outputs to nearest integer')
-    args = p.parse_args()
-    use_int = args.round_int
-    if args.monthly is not None:
-        print(json.dumps(monthly_net(args.monthly, use_int), ensure_ascii=False, indent=2))
-    elif args.annual is not None:
-        print(json.dumps(annual_net(args.annual, use_int), ensure_ascii=False, indent=2))
-    else:
-        # interactive fallback
-        mode = input("Select mode ('monthly' or 'annual'): ").strip().lower()
-        while mode not in {"monthly", "annual"}:
-            mode = input("Please type 'monthly' or 'annual': ").strip().lower()
-        amount_str = input(f"Enter gross {mode} salary (RMB): ")
-        try:
-            amount = float(amount_str)
-        except ValueError:
-            raise SystemExit("Invalid number provided.")
-        round_choice = input("Round results to whole numbers? (y/n): ").strip().lower()
-        use_int = round_choice in {"y", "yes"}
-        if mode == "monthly":
-            res = monthly_net(amount, use_int)
+    parser = argparse.ArgumentParser(description="Shanghai Salary Tax Tool")
+    sub = parser.add_subparsers(dest="mode", required=True)
+
+    # ① monthly
+    p_month = sub.add_parser("monthly")
+    p_month.add_argument("amount", type=float)
+    p_month.add_argument("--round-int", action="store_true")
+
+    # ② annual
+    p_annual = sub.add_parser("annual")
+    p_annual.add_argument("amount", type=float)
+    p_annual.add_argument("--round-int", action="store_true")
+
+    # ③ yearly-details
+    p_detail = sub.add_parser("details")
+    p_detail.add_argument("amount", type=float,
+                         help="Monthly gross salary (apply to all 12 months)")
+    p_detail.add_argument("--csv", metavar="FILE",
+                         help="Save result to CSV")
+    p_detail.add_argument("--round-int", action="store_true")
+
+    args = parser.parse_args()
+    
+    if args.mode == "monthly":
+        result = monthly_net(args.amount, args.round_int)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    
+    elif args.mode == "annual":
+        result = annual_net(args.amount, args.round_int)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    
+    elif args.mode == "details":
+        # 创建一个12个月相同工资的列表
+        monthly_list = [args.amount] * 12
+        result = yearly_salary_details(monthly_list, args.round_int)
+        
+        if args.csv:
+            # 确保 output_csv 目录存在
+            os.makedirs("output_csv", exist_ok=True)
+            
+            # 构建输出文件路径
+            monthly_file = os.path.join("output_csv", f"{args.csv}_monthly.csv")
+            totals_file = os.path.join("output_csv", f"{args.csv}_totals.csv")
+            
+            # 保存月度明细
+            monthly_df = pd.DataFrame(result["monthly"])
+            monthly_df.to_csv(monthly_file, index=False)
+            
+            # 保存年度汇总
+            totals_df = pd.DataFrame([result["totals"]])
+            totals_df.to_csv(totals_file, index=False)
+            
+            print(f"Results saved to:\n- {monthly_file}\n- {totals_file}")
         else:
-            res = annual_net(amount, use_int)
-        print(json.dumps(res, ensure_ascii=False, indent=2)) 
+            print(json.dumps(result, ensure_ascii=False, indent=2)) 
+
+
+# 使用实例
+# # 计算月薪
+# python tax_calculator.py monthly 40000
+
+# # 计算年薪
+# python tax_calculator.py annual 480000
+
+# # 计算12个月详细信息并保存为CSV
+# python tax_calculator.py details 40000 --csv salary_2024
