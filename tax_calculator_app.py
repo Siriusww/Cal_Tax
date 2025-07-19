@@ -1,3 +1,5 @@
+# 使用方式：在 Terminal 中执行： streamlit run tax_calculator_app.py
+
 import streamlit as st
 import pandas as pd
 from tax_calculator import monthly_net, annual_net, yearly_salary_details
